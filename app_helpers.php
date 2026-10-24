@@ -44,7 +44,7 @@ function redirect_for_role(string $role): string
     return match ($role) {
         'admin' => 'admin_dashboard.php',
         'manager' => 'index.php',
-        'landlord' => 'manager_dashboard.php',
+        'landlord' => 'landlord/index.php',
         default => 'browse_properties.php',
     };
 }
