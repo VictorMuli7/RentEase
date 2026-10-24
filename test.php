@@ -1,0 +1,1 @@
+<?php echo "RentEase path test working!"; ?> 
