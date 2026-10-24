@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RentEase</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef2f4;--sf:#fff;--ink:#16252b;--mu:#5b6b72;--ac:#0e6b63;--ac2:#e6f2f0;--wa:#b4570a;--er:#b3261e;--ok:#1d7a3e;--bd:#d3dce0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a1e;--sf:#18262b;--ink:#e7eef0;--mu:#9bb0b7;--ac:#4fc3b6;--ac2:#173a38;--wa:#f0a35e;--er:#ff8a80;--ok:#6fd08c;--bd:#2c4047}}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .5rem}
+header{display:flex;align-items:center;gap:1rem;padding:.7rem 1rem;background:var(--ac);color:#fff;flex-wrap:wrap}
+header b{font:700 1.3rem "Bricolage Grotesque",system-ui}header span{opacity:.85;margin-left:auto}
+header button{background:#fff3;color:#fff;border:0}
+nav{display:flex;gap:.25rem;padding:.5rem 1rem;overflow-x:auto;background:var(--sf);border-bottom:1px solid var(--bd)}
+nav button{background:none;border:0;color:var(--mu);padding:.5rem .8rem;border-radius:6px;white-space:nowrap}
+nav button.on{background:var(--ac2);color:var(--ac);font-weight:600}
+main{max-width:1000px;margin:0 auto;padding:1rem}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:1rem;margin-bottom:.8rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.8rem}
+.stat{font:700 1.7rem "Bricolage Grotesque",system-ui}
+button{font:inherit;cursor:pointer;border:1px solid var(--ac);background:var(--ac);color:#fff;border-radius:6px;padding:.4rem .8rem}
+button.g{background:none;color:var(--ac)}button.d{background:var(--er);border-color:var(--er);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+input,select,textarea{font:inherit;padding:.4rem;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--ink);max-width:100%}
+.row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.tag{display:inline-block;padding:.05rem .5rem;border-radius:99px;font-size:.8rem;background:var(--ac2);color:var(--ac)}
+.tag.w{background:#f7e3d0;color:var(--wa)}.tag.e{background:#f9dcda;color:var(--er)}.tag.o{background:#d9f0e0;color:var(--ok)}
+.tbl{overflow-x:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--bd);vertical-align:top}
+.mu{color:var(--mu)}#toast{position:fixed;bottom:calc(1rem + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.6rem 1rem;border-radius:8px;display:none;z-index:9}
+</style></head><body>
+<div id="app"></div><div id="toast" role="status"></div>
+<script>
+const $=s=>document.querySelector(s),K=n=>"KES "+Number(n).toLocaleString(),NOW="2026-10",today=()=>new Date().toISOString().slice(0,10);
+const S={u:null,tab:"",authView:"login",f:{},log:[],pay:null,
+users:[],
+units:[{id:1,p:"Kilimani Heights",loc:"Kilimani",t:"apartment",br:2,rent:45000,dep:45000,am:["Parking","Borehole"],st:"vacant"},
+{id:2,p:"Kilimani Heights",loc:"Kilimani",t:"apartment",br:1,rent:28000,dep:28000,am:["Parking","WiFi"],st:"vacant"},
+{id:3,p:"Ruaka Gardens",loc:"Ruaka",t:"maisonette",br:3,rent:60000,dep:60000,am:["Garden","Borehole","Parking"],st:"vacant"},
+{id:4,p:"Ruaka Gardens",loc:"Ruaka",t:"bungalow",br:2,rent:35000,dep:35000,am:["Garden"],st:"vacant"},
+{id:5,p:"Syokimau Court",loc:"Syokimau",t:"apartment",br:1,rent:18000,dep:18000,am:["WiFi"],st:"vacant"}],
+apps:[],leases:[],pays:[],
+vendors:[{id:1,n:"FixIt Plumbers",sp:"plumbing"},{id:2,n:"VoltPro Electricals",sp:"electrical"},{id:3,n:"SolidBuild",sp:"structural"}],
+tix:[],msgs:[],set:{late_fee_percent:5,grace_period_days:5,major_expense_threshold:20000}};
+const U=id=>S.users.find(x=>x.id==id),UN=id=>S.units.find(x=>x.id==id),L=id=>S.leases.find(x=>x.id==id);
+const audit=a=>S.log.unshift(`${new Date().toLocaleTimeString()} · ${S.u?S.u.n:"anon"} · ${a}`);
+function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2600)}
+const paid=l=>S.pays.some(p=>p.lease==l.id&&p.per==NOW&&p.st=="completed");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const tabs={tenant:["Overview","Find a house","My applications","My lease and rent","Maintenance"],manager:["Overview","Listings","Applications","Rent and overdue","Maintenance tickets","Messages"],landlord:["Overview","Expenses"],admin:["Overview","Users","Settings","Audit log"]};
+function go(t){S.tab=t;draw()}
+function login(){const email=$("#login-email").value.trim().toLowerCase(),role=$("#login-role").value,existing=S.users.find(u=>u.email==email);
+ if(!["tenant","manager","landlord","admin"].includes(role))return toast("Choose a valid role");
+ S.u=existing||{id:Math.max(0,...S.users.map(u=>u.id))+1,n:email.split("@")[0],email,phone:"",st:"active"};
+ S.u.r=role;if(!existing)S.users.push(S.u);S.tab=tabs[role][0];audit("login as "+role);draw()}
+function logout(){audit("logout");S.u=null;draw()}
+function draw(){
+ if(!S.u){$("#app").innerHTML=S.authView=="signup"?`<main><h1>Join RentEase</h1><p class="mu">Create a tenant account to find and apply for a home.</p><form id="signup-form" class="card" onsubmit="event.preventDefault();signup()"><p><label for="signup-name">Full name</label><br><input id="signup-name" name="name" autocomplete="name" minlength="2" maxlength="80" required></p><p><label for="signup-email">Email address</label><br><input id="signup-email" name="email" type="email" autocomplete="email" maxlength="120" required></p><p><label for="signup-phone">Phone number</label><br><input id="signup-phone" name="phone" type="tel" autocomplete="tel" placeholder="07XXXXXXXX or +2547XXXXXXXX" pattern="(?:\\+254|0)(?:7|1)[0-9]{8}" title="Enter a Kenyan number such as 0712345678 or +254712345678." required></p><p class="mu">Prototype signup only: your account lasts for this page session. Passwords and accounts are not stored.</p><div class="row"><button type="submit">Create tenant account</button><button type="button" class="g" onclick="S.authView='login';draw()">Back to sign in</button></div></form></main>`:`<main><h1>RentEase</h1><p class="mu">Sign in to continue to your dashboard.</p><form id="login-form" class="card" style="max-width:440px" onsubmit="event.preventDefault();login()"><p><label for="login-email">Email address</label><br><input id="login-email" name="email" type="email" autocomplete="username" maxlength="120" required></p><p><label for="login-password">Password</label><br><input id="login-password" name="password" type="password" autocomplete="current-password" required></p><p><label for="login-role">Sign in as</label><br><select id="login-role" name="role" required><option value="tenant">Tenant</option><option value="manager">Manager</option><option value="landlord">Landlord</option><option value="admin">Admin</option></select></p><p class="mu">Prototype only: role selection is not verified, credentials are not authenticated, and the password is not stored. Connect a backend before using this for real accounts.</p><p><button type="submit">Sign in</button></p></form><p>New tenant? <button class="g" onclick="S.authView='signup';draw()">Create an account</button></p></main>`;return}
+ const r=S.u.r;
+ $("#app").innerHTML=`<header><b>RentEase</b><span>${esc(S.u.n)} (${r})</span><button onclick="logout()">Sign out</button></header><nav>${tabs[r].map(t=>`<button class="${t==S.tab?"on":""}" onclick="go('${t}')">${t}</button>`).join("")}</nav><main>${V[S.tab]()}</main>`}
+const tag=(s,c)=>`<span class="tag ${c||""}">${s}</span>`;
+const tbl=(h,rows)=>`<div class="tbl"><table><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${h.length}" class="mu">Nothing here yet.</td></tr>`}</table></div>`;
+const myLease=()=>S.leases.find(l=>l.tenant==S.u.id&&l.st=="active");
+const V={
+"Overview"(){const role=S.u.r;
+ if(role=="tenant"){const l=myLease(),applications=S.apps.filter(a=>a.t==S.u.id),tickets=S.tix.filter(t=>t.t==S.u.id),outstanding=l&&!paid(l);
+ return `<h1>Tenant overview</h1><p class="mu">Welcome back, ${esc(S.u.n)}.</p><div class="grid"><div class="card"><p class="mu">Current home</p><p class="stat">${l?UN(l.unit).p:"Not rented"}</p><p>${l?K(l.rent)+" per month":"Browse available homes to get started."}</p></div><div class="card"><p class="mu">October rent</p><p class="stat">${l?(outstanding?"Due": "Paid"):"—"}</p><p>${l?(outstanding?"Payment is still outstanding.":"Your rent is up to date."):"An active lease will appear here."}</p></div><div class="card"><p class="mu">Applications</p><p class="stat">${applications.length}</p><p>${applications.filter(a=>a.st=="pending").length} awaiting a decision</p></div><div class="card"><p class="mu">Maintenance</p><p class="stat">${tickets.filter(t=>t.st!="closed").length} open</p></div></div><div class="row"><button onclick="go('Find a house')">Find a house</button><button class="g" onclick="go('My applications')">View applications</button><button class="g" onclick="go('My lease and rent')">View lease and rent</button></div>`}
+ if(role=="manager"){const pending=S.apps.filter(a=>a.st=="pending").length,open=S.tix.filter(t=>t.st!="closed").length,occupied=S.units.filter(u=>u.st=="occupied").length,col=S.pays.filter(p=>p.st=="completed"&&p.per==NOW).reduce((a,p)=>a+p.amt,0);
+ return `<h1>Manager overview</h1><p class="mu">Property operations at a glance.</p><div class="grid"><div class="card"><p class="mu">Occupancy</p><p class="stat">${occupied} of ${S.units.length}</p></div><div class="card"><p class="mu">Rent collected this month</p><p class="stat">${K(col)}</p></div><div class="card"><p class="mu">Applications to review</p><p class="stat">${pending}</p></div><div class="card"><p class="mu">Open maintenance tickets</p><p class="stat">${open}</p></div></div><div class="row"><button onclick="go('Applications')">Review applications</button><button class="g" onclick="go('Rent and overdue')">Manage rent</button><button class="g" onclick="go('Maintenance tickets')">View maintenance</button></div>`}
+ if(role=="landlord"){const occupied=S.units.filter(u=>u.st=="occupied").length,col=S.pays.filter(p=>p.st=="completed"&&p.per==NOW).reduce((a,p)=>a+p.amt,0),overdue=S.leases.filter(l=>l.st=="active"&&!paid(l)).length,expenses=S.tix.filter(t=>t.cost>S.set.major_expense_threshold&&!t.ap).length;
+ return `<h1>Landlord overview</h1><p class="mu">Your portfolio at a glance.</p><div class="grid"><div class="card"><p class="mu">Occupancy</p><p class="stat">${occupied} of ${S.units.length}</p></div><div class="card"><p class="mu">Rent collected this month</p><p class="stat">${K(col)}</p></div><div class="card"><p class="mu">Overdue leases</p><p class="stat">${overdue}</p></div><div class="card"><p class="mu">Expenses awaiting approval</p><p class="stat">${expenses}</p></div></div><div class="row"><button onclick="go('Expenses')">Review expenses</button><button class="g" onclick="csv()">Export payments report</button></div>${tbl(["Tenant","House","Rent","October"],S.leases.map(l=>[esc(U(l.tenant).n),UN(l.unit).p,K(l.rent),paid(l)?tag("paid","o"):tag("overdue","e")]))}`}
+ return `<h1>Admin overview</h1><p class="mu">Account and service status.</p><div class="grid"><div class="card"><p class="mu">Total accounts</p><p class="stat">${S.users.length}</p></div><div class="card"><p class="mu">Tenants</p><p class="stat">${S.users.filter(u=>u.r=="tenant").length}</p></div><div class="card"><p class="mu">Suspended accounts</p><p class="stat">${S.users.filter(u=>u.st=="suspended").length}</p></div><div class="card"><p class="mu">Activity log entries</p><p class="stat">${S.log.length}</p></div></div><div class="row"><button onclick="go('Users')">Manage users</button><button class="g" onclick="go('Audit log')">View audit log</button></div>`},
+"Find a house"(){const f=S.f,list=S.units.filter(u=>u.st=="vacant"&&(!f.loc||u.loc==f.loc)&&(!f.br||u.br==f.br)&&(!f.max||u.rent<=f.max)&&(!f.t||u.t==f.t));
+ const loc=[...new Set(S.units.map(u=>u.loc))];
+ return `<div class="card row"><select onchange="S.f.loc=this.value;draw()"><option value="">Any location</option>${loc.map(l=>`<option ${f.loc==l?"selected":""}>${l}</option>`).join("")}</select><select onchange="S.f.br=+this.value;draw()"><option value="0">Any bedrooms</option>${[1,2,3].map(n=>`<option value="${n}" ${f.br==n?"selected":""}>${n} bedroom${n>1?"s":""}</option>`).join("")}</select><select onchange="S.f.t=this.value;draw()"><option value="">Any type</option>${["apartment","bungalow","maisonette"].map(t=>`<option ${f.t==t?"selected":""}>${t}</option>`).join("")}</select><select onchange="S.f.max=+this.value;draw()"><option value="0">Any price</option>${[30000,45000,60000].map(n=>`<option value="${n}" ${f.max==n?"selected":""}>Up to ${K(n)}</option>`).join("")}</select></div>
+ <div class="grid">${list.map(u=>`<div class="card"><h3>${u.p}</h3><p class="mu">${u.loc} · ${u.br} bed ${u.t}</p><p class="stat">${K(u.rent)}</p><p>${u.am.map(a=>tag(a)).join(" ")}</p><button onclick="apply(${u.id})">Apply for this house</button></div>`).join("")||'<p class="mu">No vacant houses match. Widen your filters.</p>'}</div>`},
+"My applications"(){return tbl(["House","Status","Manager comment"],S.apps.filter(a=>a.t==S.u.id).map(a=>[UN(a.unit).p+" "+UN(a.unit).br+"BR",tag(a.st,a.st=="approved"?"o":a.st=="rejected"?"e":"w"),a.c||"-"]))},
+"My lease and rent"(){const l=myLease();if(!l)return'<div class="card">You have no active lease. Apply for a house to get started.</div>';const u=UN(l.unit),mine=S.pays.filter(p=>p.lease==l.id),due=!paid(l);
+ return `<div class="card"><h3>${u.p}, ${u.br} bedroom</h3><p class="mu">Lease ${l.start} to ${l.end} · ${K(l.rent)} per month</p><p>October rent: ${due?tag("due","w"):tag("paid","o")}</p>
+ ${due?`<div class="row"><input id="ph" placeholder="M-Pesa number, 07XXXXXXXX" value="0712345678"><button onclick="mpesa(${l.id})">Pay ${K(l.rent)} with M-Pesa</button></div>${S.pay?`<p class="mu">${S.pay}</p>`:""}<p class="mu">Use a number that does not start with 07 or 01 to see a failed payment.</p>`:""}</div>
+ ${tbl(["Receipt","Month","Amount","Method","Status"],mine.map(p=>[p.ref,p.per,K(p.amt),p.m,tag(p.st,p.st=="completed"?"o":p.st=="failed"?"e":"w")]))}
+ <p><button class="g" onclick="req(${l.id},'renewal_requested')">Request renewal</button> <button class="g" onclick="req(${l.id},'termination_requested')">Request termination</button> ${l.st!="active"?tag(l.st,"w"):""}</p>`},
+"Maintenance"(){const l=myLease();return `${l?`<div class="card row"><select id="mc">${["plumbing","electrical","structural","other"].map(c=>`<option>${c}</option>`).join("")}</select><input id="md" placeholder="Describe the issue" size="30"><button onclick="report(${l.unit})">Report issue</button></div>`:'<div class="card">Only tenants with an active lease can report issues.</div>'}${tbl(["Category","Issue","Status"],S.tix.filter(t=>t.t==S.u.id).map(t=>[t.c,t.d,tag(t.st,t.st=="closed"?"o":"w")]))}`},
+"Listings"(){return tbl(["House","Rent","Status","Action"],S.units.map(u=>[`${u.p} ${u.br}BR ${u.t}`,K(u.rent),tag(u.st,u.st=="vacant"?"o":""),`<button class="g" onclick="flip(${u.id})">Mark ${u.st=="vacant"?"occupied":"vacant"}</button>`]))},
+"Applications"(){return tbl(["Applicant","House","Income","Status","Decision"],S.apps.map(a=>[esc(U(a.t).n),UN(a.unit).p+" "+UN(a.unit).br+"BR",K(a.inc),tag(a.st,a.st=="approved"?"o":a.st=="rejected"?"e":"w"),a.st=="pending"?`<input id="c${a.id}" placeholder="Comment"> <button onclick="decide(${a.id},1)">Approve</button> <button class="d" onclick="decide(${a.id},0)">Reject</button>`:a.c||"-"]))},
+"Rent and overdue"(){return tbl(["Tenant","House","Rent","October","Action"],S.leases.filter(l=>l.st!="terminated").map(l=>{const p=paid(l);return[esc(U(l.tenant).n),UN(l.unit).p,K(l.rent),p?tag("paid","o"):tag("overdue","e"),p?"-":`<button onclick="manual(${l.id})">Record cash payment</button>`]}))},
+"Maintenance tickets"(){return tbl(["Unit","Issue","Status","Action"],S.tix.map(t=>[UN(t.unit).p+" "+UN(t.unit).br+"BR",t.c+": "+t.d,tag(t.st,t.st=="closed"?"o":"w"),t.st=="open"?`<select id="v${t.id}">${S.vendors.map(v=>`<option value="${v.id}">${v.n}</option>`).join("")}</select> <button onclick="assign(${t.id})">Assign</button>`:t.st=="assigned"?`<input id="x${t.id}" type="number" placeholder="Cost KES"> <button onclick="close_(${t.id})">Close ticket</button>`:(t.cost?K(t.cost):"")+" "+(t.ap?tag("approved","o"):t.cost>S.set.major_expense_threshold?tag("awaiting landlord","w"):"")]))},
+"Messages"(){return `<div class="card"><textarea id="bm" rows="3" style="width:100%" placeholder="Message to all tenants"></textarea><p><button onclick="bulk()">Send to all tenants</button></p></div>${S.msgs.map(m=>`<div class="card">${m}</div>`).join("")}`},
+"Expenses"(){const t=S.tix.filter(x=>x.cost>S.set.major_expense_threshold);return tbl(["Issue","Cost","Decision"],t.map(x=>[x.c+": "+x.d,K(x.cost),x.ap?tag("approved","o"):`<button onclick="approve(${x.id})">Approve expense</button>`]))+`<p class="mu">Expenses above ${K(S.set.major_expense_threshold)} need your approval.</p>`},
+"Users"(){return tbl(["Name","Role","Status","Action"],S.users.map(u=>[esc(u.n),tag(u.r),tag(u.st,u.st=="active"?"o":"e"),u.id==S.u.id?"-":`<button class="g" onclick="susp(${u.id})">${u.st=="active"?"Suspend":"Reactivate"}</button>`]))},
+"Settings"(){return `<div class="card">${Object.keys(S.set).map(k=>`<p class="row"><label style="min-width:230px">${k}</label><input type="number" value="${S.set[k]}" onchange="S.set['${k}']=+this.value;audit('setting ${k}');toast('Saved')"></p>`).join("")}</div>`},
+"Audit log"(){return S.log.length?S.log.map(x=>`<div class="card">${esc(x)}</div>`).join(""):'<p class="mu">No activity yet.</p>'}};
+function apply(id){if(S.apps.some(a=>a.t==S.u.id&&a.unit==id))return toast("You already applied for this house");const inc=+prompt("Monthly income (KES)","60000");if(!inc)return;S.apps.push({id:S.apps.length+1,t:S.u.id,unit:id,inc,st:"pending"});audit("application");toast("Application sent. Track it under My applications.")}
+function signup(){const name=$("#signup-name").value.trim(),email=$("#signup-email").value.trim().toLowerCase(),phone=$("#signup-phone").value.trim();
+ if(!/^\p{L}[\p{L} .'-]{1,79}$/u.test(name))return toast("Enter a name using letters, spaces, apostrophes, periods or hyphens");
+ if(S.users.some(u=>u.email==email||u.phone==phone))return toast("An account already uses that email or phone number");
+ const u={id:Math.max(0,...S.users.map(x=>x.id))+1,n:name,r:"tenant",st:"active",email,phone};S.users.push(u);S.u=u;S.authView="login";S.tab=tabs.tenant[0];audit("tenant account created");draw();toast("Welcome to RentEase. Your tenant account is ready.")}
+function mpesa(l){const ph=$("#ph").value,lease=L(l),ref="RE-"+Math.random().toString(36).slice(2,8).toUpperCase();S.pay="Waiting for M-Pesa PIN prompt on "+ph+"...";draw();
+ setTimeout(()=>{const ok=/^(07|01)\d{8}$/.test(ph);S.pays.push({id:S.pays.length+1,lease:l,amt:lease.rent,m:"mpesa",ref,per:NOW,st:ok?"completed":"failed"});S.pay=ok?null:"M-Pesa did not confirm. The payment is logged as failed. Check the number and try again.";audit("payment "+(ok?"completed":"failed"));if(ok)toast("Payment received. Receipt "+ref);draw()},1200)}
+function req(id,s){L(id).st=s;audit(s);toast("Request sent to your manager");draw()}
+function report(u){const d=$("#md").value.trim();if(!d)return toast("Describe the issue first");S.tix.push({id:S.tix.length+1,unit:u,t:S.u.id,c:$("#mc").value,d,st:"open"});audit("ticket");draw()}
+function flip(id){const u=UN(id);u.st=u.st=="vacant"?"occupied":"vacant";audit("unit "+id+" "+u.st);draw()}
+function decide(id,ok){const a=S.apps.find(x=>x.id==id);a.st=ok?"approved":"rejected";a.c=$("#c"+id).value;if(ok){const u=UN(a.unit);u.st="occupied";S.leases.push({id:S.leases.length+1,unit:a.unit,tenant:a.t,rent:u.rent,start:today(),end:(+today().slice(0,4)+1)+today().slice(4),st:"active"})}audit("application "+a.st);toast(ok?"Approved. Lease created.":"Rejected. Applicant notified.");draw()}
+function manual(l){const x=L(l);S.pays.push({id:S.pays.length+1,lease:l,amt:x.rent,m:"cash",ref:"RE-C"+Date.now().toString(36).toUpperCase(),per:NOW,st:"completed"});audit("manual payment");draw()}
+function assign(id){const t=S.tix.find(x=>x.id==id);t.v=+$("#v"+id).value;t.st="assigned";audit("assign ticket");draw()}
+function close_(id){const t=S.tix.find(x=>x.id==id);t.cost=+$("#x"+id).value||0;t.st="closed";audit("close ticket");draw()}
+function bulk(){const m=$("#bm").value.trim();if(!m)return;S.msgs.unshift(m);audit("bulk message");draw()}
+function approve(id){S.tix.find(x=>x.id==id).ap=1;audit("expense approved");draw()}
+function susp(id){const u=U(id);u.st=u.st=="active"?"suspended":"active";audit(u.st+" "+u.n);draw()}
+function csv(){const t="reference,month,amount,method,status\n"+S.pays.map(p=>[p.ref,p.per,p.amt,p.m,p.st].join(",")).join("\n");const a=document.createElement("a");a.href="data:text/csv,"+encodeURIComponent(t);a.download="payments.csv";a.click()}
+draw();
+</script></body></html>
