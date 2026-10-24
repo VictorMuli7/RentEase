@@ -1,40 +1,46 @@
 <?php
-session_start();
+require_once 'app_helpers.php';
 require_once 'db_connect.php';
+
+if (!empty($_SESSION['user_id'])) {
+    header('Location: ' . redirect_for_role($_SESSION['role_name'] ?? 'tenant'));
+    exit;
+}
 
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email    = trim($_POST['email']);
-    $password = $_POST['password'];
+    verify_csrf();
+    $email = strtolower(trim($_POST['email'] ?? ''));
+    $password = $_POST['password'] ?? '';
 
-    if (!empty($email) && !empty($password)) {
+    if (filter_var($email, FILTER_VALIDATE_EMAIL) && $password !== '') {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+            $stmt = $pdo->prepare(
+                "SELECT u.user_id, u.role_id, u.full_name, u.email, u.password_hash, u.status, r.role_name
+                 FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.email = ?"
+            );
             $stmt->execute([$email]);
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            $user = $stmt->fetch();
 
-            // Verifies password
-            if ($user && (password_verify($password, $user['password_hash']) || $password === $user['password_hash'])) {
+            if ($user && $user['status'] === 'active' && password_verify($password, $user['password_hash'])) {
+                session_regenerate_id(true);
+                $_SESSION['user_id'] = (int) $user['user_id'];
+                $_SESSION['role_id'] = (int) $user['role_id'];
+                $_SESSION['role_name'] = $user['role_name'];
                 $_SESSION['user_email'] = $user['email'];
-                $_SESSION['user_name']  = $user['name'] ?? ucwords(str_replace(['.', '_'], ' ', explode('@', $user['email'])[0]));
-                $_SESSION['role_id']    = $user['role_id'] ?? null;
-
-                // Smart Redirection: Manager vs Tenant
-                if ($user['email'] === 'judy@example.com') {
-                    header("Location: admin_dashboard.php");
-                } else {
-                    header("Location: browse_properties.php");
-                }
-                exit();
-            } else {
-                $error = "Invalid email or password.";
+                $_SESSION['user_name'] = $user['full_name'];
+                header('Location: ' . redirect_for_role($user['role_name']));
+                exit;
             }
+
+            $error = 'Invalid email or password, or this account is inactive.';
         } catch (PDOException $e) {
-            $error = "Database error: " . $e->getMessage();
+            error_log('RentEase login failed: ' . $e->getMessage());
+            $error = 'Sign-in is temporarily unavailable. Check the local database setup and try again.';
         }
     } else {
-        $error = "Please fill in all fields.";
+        $error = 'Enter a valid email address and password.';
     }
 }
 ?>
@@ -78,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="POST" action="login.php">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>">
             <div class="form-group">
                 <label for="email">Email Address</label>
                 <input type="email" id="email" name="email" placeholder="name@example.com" required>

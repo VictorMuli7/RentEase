@@ -1,40 +1,69 @@
 <?php
-include 'db_connect.php';
+require_once 'app_helpers.php';
+require_once 'db_connect.php';
+require_role('manager', 'admin');
 
-$message = "";
+$error = '';
+$success = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf();
+    $name = trim($_POST['name'] ?? '');
+    $location = trim($_POST['location'] ?? '');
+    $type = $_POST['house_type'] ?? '';
+    $landmarks = trim($_POST['landmarks'] ?? '');
+    $label = trim($_POST['unit_label'] ?? '');
+    $bedrooms = filter_input(INPUT_POST, 'bedrooms', FILTER_VALIDATE_INT);
+    $rent = filter_input(INPUT_POST, 'rent_amount', FILTER_VALIDATE_FLOAT);
+    $deposit = filter_input(INPUT_POST, 'deposit_amount', FILTER_VALIDATE_FLOAT);
+    $available = trim($_POST['available_from'] ?? '');
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    try {
-        $pdo->beginTransaction();
-
-        // 1. Insert into properties table
-        $stmt = $pdo->prepare("INSERT INTO properties (owner_id, manager_id, name, location, house_type, landmarks, status) VALUES (?, ?, ?, ?, ?, ?, 'active')");
-        $stmt->execute([
-            $_POST['owner_id'],
-            $_POST['manager_id'],
-            $_POST['name'],
-            $_POST['location'],
-            $_POST['house_type'],
-            $_POST['landmarks']
-        ]);
-        $property_id = $pdo->lastInsertId();
-
-        // 2. Insert into units table linked to this property
-        $stmt_unit = $pdo->prepare("INSERT INTO units (property_id, unit_label, bedrooms, rent_amount, deposit_amount, available_from, status) VALUES (?, ?, ?, ?, ?, ?, 'vacant')");
-        $stmt_unit->execute([
-            $property_id,
-            $_POST['unit_label'],
-            $_POST['bedrooms'],
-            $_POST['rent_amount'],
-            $_POST['deposit_amount'],
-            $_POST['available_from']
-        ]);
-
-        $pdo->commit();
-        $message = "Listing and unit added successfully!";
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $message = "Error: " . $e->getMessage();
+    if ($name === '' || strlen($name) > 100 || $location === '' || strlen($location) > 150) {
+        $error = 'Enter a property name and location within the allowed lengths.';
+    } elseif (!in_array($type, ['apartment', 'bungalow', 'maisonette'], true)) {
+        $error = 'Choose a valid house type.';
+    } elseif ($label === '' || strlen($label) > 20 || !$bedrooms || $bedrooms < 1 || $bedrooms > 255) {
+        $error = 'Enter a unit label and a valid bedroom count.';
+    } elseif ($rent === false || $rent <= 0 || $deposit === false || $deposit < 0) {
+        $error = 'Rent must be greater than zero and deposit cannot be negative.';
+    } else {
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare(
+                "INSERT INTO properties (owner_id, manager_id, name, location, house_type, landmarks)
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->execute([
+                $_SESSION['user_id'],
+                $_SESSION['user_id'],
+                $name,
+                $location,
+                $type,
+                $landmarks === '' ? null : $landmarks,
+            ]);
+            $property_id = (int) $pdo->lastInsertId();
+            $stmt = $pdo->prepare(
+                "INSERT INTO units (property_id, unit_label, bedrooms, rent_amount, deposit_amount, available_from)
+                 VALUES (?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->execute([
+                $property_id,
+                $label,
+                $bedrooms,
+                $rent,
+                $deposit,
+                $available === '' ? null : $available,
+            ]);
+            $pdo->commit();
+            $success = 'Property and first unit were added.';
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('RentEase listing creation failed: ' . $e->getMessage());
+            $error = $e->getCode() === '23000'
+                ? 'That unit label is already in use for this property.'
+                : 'The listing could not be saved. Check the entered values and try again.';
+        }
     }
 }
 ?>
@@ -42,69 +71,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>RentEase - Property Manager: Add Listing</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add listing - RentEase</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f4; margin: 0; padding: 20px; }
-        .container { max-width: 600px; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin: auto; }
-        h2, h3 { color: #0f5132; }
-        label { display: block; margin-top: 15px; font-weight: bold; color: #333; }
-        input, select { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #0f5132; color: white; border: none; padding: 12px 20px; margin-top: 20px; cursor: pointer; border-radius: 4px; font-size: 16px; width: 100%; }
-        button:hover { background-color: #198754; }
-        .msg { margin-bottom: 20px; padding: 10px; background: #d1e7dd; color: #0f5132; border-radius: 4px; }
+        body{font:16px/1.5 system-ui,sans-serif;margin:0;background:#f5f7fa;color:#17212b}
+        main{max-width:650px;margin:35px auto;padding:0 20px}.card{background:#fff;border:1px solid #dce3e8;border-radius:10px;padding:24px}
+        label{display:block;font-weight:600;margin-top:14px}input,select,button{font:inherit;padding:10px;border:1px solid #aab7bf;border-radius:6px}
+        input,select{width:100%;box-sizing:border-box}button{background:#0e6b63;color:#fff;border-color:#0e6b63;margin-top:20px;cursor:pointer}
+        .error{color:#a52121}.success{color:#176b37}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Property Manager Portal</h2>
-        <h3>Add New Property & Unit Listing</h3>
-        
-        <?php if($message): ?>
-            <div class="msg"><?php echo htmlspecialchars($message); ?></div>
-        <?php endif; ?>
-
-        <form method="POST" action="">
-            <h3>Property Details</h3>
-            <label>Property Name:</label>
-            <input type="text" name="name" required placeholder="e.g. Kilimani Heights">
-
-            <label>Location:</label>
-            <input type="text" name="location" required placeholder="e.g. Kilimani, Nairobi">
-
-            <label>House Type:</label>
-            <select name="house_type" required>
-                <option value="apartment">Apartment</option>
-                <option value="bungalow">Bungalow</option>
-                <option value="maisonette">Maisonette</option>
+<main>
+    <p><a href="index.php">← Manager dashboard</a></p>
+    <section class="card">
+        <h1>Add a property and unit</h1>
+        <p>New listings will be owned and managed by your account.</p>
+        <?php if ($error): ?><p class="error"><?= e($error) ?></p><?php endif; ?>
+        <?php if ($success): ?><p class="success"><?= e($success) ?></p><?php endif; ?>
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+            <label for="name">Property name</label><input id="name" name="name" maxlength="100" required>
+            <label for="location">Location</label><input id="location" name="location" maxlength="150" required>
+            <label for="house_type">House type</label>
+            <select id="house_type" name="house_type" required>
+                <option value="apartment">Apartment</option><option value="bungalow">Bungalow</option><option value="maisonette">Maisonette</option>
             </select>
-
-            <label>Landmarks:</label>
-            <input type="text" name="landmarks" placeholder="e.g. Near Yaya Centre">
-
-            <label>Owner ID (Landlord User ID):</label>
-            <input type="number" name="owner_id" required placeholder="e.g. 3">
-
-            <label>Manager ID (Your User ID):</label>
-            <input type="number" name="manager_id" required value="2">
-
-            <h3>Initial Unit Details</h3>
-            <label>Unit Label / Number:</label>
-            <input type="text" name="unit_label" required placeholder="e.g. B4">
-
-            <label>Bedrooms:</label>
-            <input type="number" name="bedrooms" required placeholder="e.g. 2">
-
-            <label>Rent Amount (KES):</label>
-            <input type="number" step="0.01" name="rent_amount" required placeholder="45000.00">
-
-            <label>Deposit Amount (KES):</label>
-            <input type="number" step="0.01" name="deposit_amount" required placeholder="45000.00">
-
-            <label>Available From:</label>
-            <input type="date" name="available_from" required>
-
-            <button type="submit">Save Listing</button>
+            <label for="landmarks">Nearby landmarks (optional)</label><input id="landmarks" name="landmarks" maxlength="255">
+            <label for="unit_label">Unit label</label><input id="unit_label" name="unit_label" maxlength="20" required>
+            <label for="bedrooms">Bedrooms</label><input id="bedrooms" name="bedrooms" type="number" min="1" max="255" required>
+            <label for="rent_amount">Monthly rent (KES)</label><input id="rent_amount" name="rent_amount" type="number" min="0.01" step="0.01" required>
+            <label for="deposit_amount">Deposit (KES)</label><input id="deposit_amount" name="deposit_amount" type="number" min="0" step="0.01" required>
+            <label for="available_from">Available from (optional)</label><input id="available_from" name="available_from" type="date">
+            <button type="submit">Save listing</button>
         </form>
-    </div>
+    </section>
+</main>
 </body>
 </html>

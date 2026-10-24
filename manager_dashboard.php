@@ -1,96 +1,69 @@
 <?php
-session_start();
-
-// Protect page from unauthorized users
-if (!isset($_SESSION['user_id']) || ($_SESSION['role_name'] !== 'manager' && $_SESSION['role_name'] !== 'admin')) {
-    header("Location: login.php");
-    exit;
-}
-
+require_once 'app_helpers.php';
 require_once 'db_connect.php';
+require_role('landlord');
 
-// Fetch summary counts for the dashboard cards
-$prop_count = $pdo->query("SELECT COUNT(*) FROM properties")->fetchColumn();
-$unit_count = $pdo->query("SELECT COUNT(*) FROM units")->fetchColumn();
-$pending_apps = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'pending'")->fetchColumn();
-$pending_maint = $pdo->query("SELECT COUNT(*) FROM maintenance_requests WHERE status != 'resolved'")->fetchColumn();
+$property_count = $pdo->prepare('SELECT COUNT(*) FROM properties WHERE owner_id = ?');
+$property_count->execute([$_SESSION['user_id']]);
+$properties = (int) $property_count->fetchColumn();
+$unit_count = $pdo->prepare(
+    'SELECT COUNT(*) FROM units un JOIN properties p ON p.property_id = un.property_id WHERE p.owner_id = ?'
+);
+$unit_count->execute([$_SESSION['user_id']]);
+$units = (int) $unit_count->fetchColumn();
+$rent = $pdo->prepare(
+    "SELECT COALESCE(SUM(py.amount), 0)
+     FROM payments py
+     JOIN leases l ON l.lease_id = py.lease_id
+     JOIN units un ON un.unit_id = l.unit_id
+     JOIN properties p ON p.property_id = un.property_id
+     WHERE p.owner_id = ? AND py.status = 'completed'
+       AND py.paid_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')"
+);
+$rent->execute([$_SESSION['user_id']]);
+$collected = (float) $rent->fetchColumn();
+$stmt = $pdo->prepare(
+    "SELECT p.name, p.location, un.unit_label, un.status, un.rent_amount
+     FROM properties p JOIN units un ON un.property_id = p.property_id
+     WHERE p.owner_id = ? ORDER BY p.name, un.unit_label"
+);
+$stmt->execute([$_SESSION['user_id']]);
+$listings = $stmt->fetchAll();
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Property Manager Dashboard - RentEase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Landlord dashboard - RentEase</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; background-color: #f4f6f9; }
-        .sidebar { width: 250px; background: #343a40; color: white; position: fixed; height: 100%; padding-top: 20px; }
-        .sidebar h2 { text-align: center; color: #ffc107; font-size: 22px; margin-bottom: 30px; }
-        .sidebar a { padding: 15px 20px; display: block; color: #cfd8dc; text-decoration: none; font-size: 16px; transition: 0.2s; }
-        .sidebar a:hover { background: #495057; color: white; }
-        .main-content { margin-left: 250px; padding: 30px; }
-        .header { display: flex; justify-content: space-between; align-items: center; background: white; padding: 15px 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .cards { display: flex; gap: 20px; margin-top: 30px; }
-        .card { background: white; padding: 25px; border-radius: 8px; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
-        .card.warning { border-left-color: #ffc107; }
-        .card.danger { border-left-color: #dc3545; }
-        .card.success { border-left-color: #28a745; }
-        .card h3 { margin: 0; font-size: 13px; color: #6c757d; text-transform: uppercase; }
-        .card p { font-size: 28px; font-weight: bold; margin: 10px 0 0 0; color: #333; }
-        .quick-actions { margin-top: 40px; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; font-weight: bold; }
-        .btn:hover { opacity: 0.9; }
+        body{font:16px/1.5 system-ui,sans-serif;margin:0;background:#f5f7fa;color:#17212b}
+        header{background:#0e6b63;color:#fff;padding:16px max(20px,calc((100% - 1000px)/2))}
+        main{max-width:1000px;margin:30px auto;padding:0 20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+        .card{background:#fff;border:1px solid #dce3e8;border-radius:10px;padding:18px;margin-bottom:16px}.count{font-size:1.8rem;font-weight:700}
+        table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #dce3e8}
     </style>
 </head>
 <body>
-
-    <!-- Sidebar Navigation -->
-    <div class="sidebar">
-        <h2>RentEase Manager</h2>
-        <a href="manager_dashboard.php">🏠 Dashboard</a>
-        <a href="add_listing.php">➕ Add Property / Unit</a>
-        <a href="applications_list.php">📋 Review Applications</a>
-        <a href="manage_maintenance.php">🛠️ Maintenance Tickets</a>
-        <a href="payments.php">💳 Rent Payments</a>
-        <a href="login.php" style="margin-top: 30px; color: #ff6b6b;">🚪 Logout</a>
+<header><strong>RentEase · Landlord</strong> · <?= e($_SESSION['user_name']) ?> · <a style="color:white" href="change_password.php">Change password</a> · <a style="color:white" href="logout.php">Sign out</a></header>
+<main>
+    <h1>Portfolio overview</h1>
+    <div class="grid">
+        <section class="card">Properties<div class="count"><?= $properties ?></div></section>
+        <section class="card">Units<div class="count"><?= $units ?></div></section>
+        <section class="card">Rent collected this month<div class="count">KES <?= number_format($collected) ?></div></section>
     </div>
-
-    <!-- Main Content Area -->
-    <div class="main-content">
-        <div class="header">
-            <h2>Welcome Back, Manager</h2>
-            <span>System Status: <strong style="color: #28a745;">Online</strong></span>
-        </div>
-
-        <!-- Summary Metric Cards -->
-        <div class="cards">
-            <div class="card">
-                <h3>Total Properties</h3>
-                <p><?= $prop_count ?></p>
-            </div>
-            <div class="card success">
-                <h3>Total Units</h3>
-                <p><?= $unit_count ?></p>
-            </div>
-            <div class="card warning">
-                <h3>Pending Applications</h3>
-                <p><?= $pending_apps ?></p>
-            </div>
-            <div class="card danger">
-                <h3>Open Maintenance</h3>
-                <p><?= $pending_maint ?></p>
-            </div>
-        </div>
-
-        <!-- Quick Actions Panel -->
-        <div class="quick-actions">
-            <h3>Quick Actions</h3>
-            <p>Manage your rental properties, applicant reviews, and maintenance from one place.</p>
-            <br>
-            <a href="add_listing.php" class="btn">Add New Listing</a>
-            <a href="applications_list.php" class="btn" style="background-color: #ffc107; color: #333;">Review Applications</a>
-            <a href="manage_maintenance.php" class="btn" style="background-color: #dc3545;">Manage Maintenance</a>
-        </div>
-    </div>
-
+    <section class="card">
+        <h2>Your units</h2>
+        <div style="overflow-x:auto"><table><thead><tr><th>Property</th><th>Location</th><th>Unit</th><th>Rent</th><th>Status</th></tr></thead><tbody>
+        <?php foreach ($listings as $listing): ?>
+            <tr><td><?= e($listing['name']) ?></td><td><?= e($listing['location']) ?></td>
+                <td><?= e($listing['unit_label']) ?></td><td>KES <?= number_format((float) $listing['rent_amount']) ?></td>
+                <td><?= e(ucfirst($listing['status'])) ?></td></tr>
+        <?php endforeach; ?>
+        <?php if (!$listings): ?><tr><td colspan="5">No properties are assigned to this account.</td></tr><?php endif; ?>
+        </tbody></table></div>
+    </section>
+</main>
 </body>
 </html>

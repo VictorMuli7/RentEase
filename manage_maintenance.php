@@ -1,102 +1,108 @@
 <?php
-session_start();
+require_once 'app_helpers.php';
 require_once 'db_connect.php';
+require_role('manager', 'admin');
 
-// Handle status updates
-if (isset($_GET['id']) && isset($_GET['status'])) {
-    $req_id = intval($_GET['id']);
-    $new_status = $_GET['status'];
-    
-    $stmt = $pdo->prepare("UPDATE maintenance_requests SET status = ? WHERE request_id = ?");
-    $stmt->execute([$new_status, $req_id]);
-    header("Location: manage_maintenance.php");
-    exit;
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf();
+    $request_id = filter_input(INPUT_POST, 'request_id', FILTER_VALIDATE_INT);
+    $status = $_POST['status'] ?? '';
+    if (!$request_id || !in_array($status, ['assigned', 'in_progress', 'closed'], true)) {
+        $error = 'Choose a valid request and status.';
+    } else {
+        $check_sql =
+            'SELECT m.request_id FROM maintenance_requests m
+             JOIN units un ON un.unit_id = m.unit_id
+             JOIN properties p ON p.property_id = un.property_id
+             WHERE m.request_id = ?';
+        $check_params = [$request_id];
+        if ($_SESSION['role_name'] !== 'admin') {
+            $check_sql .= ' AND p.manager_id = ?';
+            $check_params[] = $_SESSION['user_id'];
+        }
+        $check = $pdo->prepare($check_sql);
+        $check->execute($check_params);
+        if (!$check->fetch()) {
+            $error = 'That request was not found or is not assigned to your properties.';
+        } else {
+            $sql =
+                'UPDATE maintenance_requests m
+                 JOIN units un ON un.unit_id = m.unit_id
+                 JOIN properties p ON p.property_id = un.property_id
+                 SET m.status = ?, m.closed_at = ? WHERE m.request_id = ?';
+            $params = [$status, $status === 'closed' ? date('Y-m-d H:i:s') : null, $request_id];
+            if ($_SESSION['role_name'] !== 'admin') {
+                $sql .= ' AND p.manager_id = ?';
+                $params[] = $_SESSION['user_id'];
+            }
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+        }
+    }
 }
 
-// Fetch all maintenance tickets
-$sql = "SELECT m.request_id, m.issue_title, m.description, m.priority, m.status, m.created_at,
-               u.full_name AS tenant_name, u.phone, p.name AS property_name, un.unit_number
-        FROM maintenance_requests m
-        JOIN users u ON m.tenant_id = u.user_id
-        JOIN units un ON m.unit_id = un.unit_id
-        JOIN properties p ON un.property_id = p.property_id
-        ORDER BY m.created_at DESC";
-
-$requests = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+$sql =
+    "SELECT m.request_id, m.category, m.description, m.status, m.created_at,
+            u.full_name, u.phone, p.name AS property_name, un.unit_label
+     FROM maintenance_requests m
+     JOIN users u ON u.user_id = m.tenant_id
+     JOIN units un ON un.unit_id = m.unit_id
+     JOIN properties p ON p.property_id = un.property_id";
+if ($_SESSION['role_name'] !== 'admin') {
+    $stmt = $pdo->prepare($sql . ' WHERE p.manager_id = ? ORDER BY m.created_at DESC');
+    $stmt->execute([$_SESSION['user_id']]);
+    $requests = $stmt->fetchAll();
+} else {
+    $requests = $pdo->query($sql . ' ORDER BY m.created_at DESC')->fetchAll();
+}
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Maintenance Tickets - RentEase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Maintenance requests - RentEase</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; }
-        h2 { color: #333; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #007bff; color: white; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-        .high { background: #f8d7da; color: #721c24; }
-        .medium { background: #fff3cd; color: #856404; }
-        .low { background: #e2e3e5; color: #383d41; }
-        .pending { background: #ffc107; color: #333; }
-        .in_progress { background: #17a2b8; color: white; }
-        .resolved { background: #28a745; color: white; }
-        .btn { padding: 5px 10px; text-decoration: none; color: white; border-radius: 4px; font-size: 12px; margin-right: 3px; }
-        .btn-work { background-color: #17a2b8; }
-        .btn-resolve { background-color: #28a745; }
+        body{font:15px/1.5 system-ui,sans-serif;margin:0;background:#f5f7fa;color:#17212b}
+        main{max-width:1200px;margin:32px auto;padding:0 20px}.card{background:#fff;border:1px solid #dce3e8;border-radius:10px;padding:18px}
+        table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:1px solid #dce3e8;padding:10px;vertical-align:top}
+        select,button{font:inherit;padding:7px;border:1px solid #aab7bf;border-radius:5px}button{background:#0e6b63;color:#fff;cursor:pointer}
+        .error{color:#a52121}
     </style>
 </head>
 <body>
-
-    <h2>Maintenance Requests Center</h2>
-    <a href="manager_dashboard.php" style="text-decoration: none; font-weight: bold; color: #007bff;">← Back to Dashboard</a>
-    <br><br>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Ticket #</th>
-                <th>Tenant & Unit</th>
-                <th>Issue</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (empty($requests)): ?>
-                <tr><td colspan="6" style="text-align:center;">No maintenance requests found.</td></tr>
-            <?php else: ?>
-                <?php foreach ($requests as $r): ?>
-                    <tr>
-                        <td>#<?= $r['request_id'] ?></td>
-                        <td>
-                            <strong><?= htmlspecialchars($r['tenant_name']) ?></strong><br>
-                            <small><?= htmlspecialchars($r['property_name']) ?> (Unit <?= htmlspecialchars($r['unit_number']) ?>)</small>
-                        </td>
-                        <td>
-                            <strong><?= htmlspecialchars($r['issue_title']) ?></strong><br>
-                            <small color="#666"><?= htmlspecialchars($r['description']) ?></small>
-                        </td>
-                        <td><span class="badge <?= strtolower($r['priority']) ?>"><?= ucfirst($r['priority']) ?></span></td>
-                        <td><span class="badge <?= strtolower($r['status']) ?>"><?= ucfirst(str_replace('_', ' ', $r['status'])) ?></span></td>
-                        <td>
-                            <?php if ($r['status'] === 'pending'): ?>
-                                <a href="manage_maintenance.php?id=<?= $r['request_id'] ?>&status=in_progress" class="btn btn-work">Mark In Progress</a>
-                            <?php endif; ?>
-                            <?php if ($r['status'] !== 'resolved'): ?>
-                                <a href="manage_maintenance.php?id=<?= $r['request_id'] ?>&status=resolved" class="btn btn-resolve">Mark Resolved</a>
-                            <?php else: ?>
-                                <em>Closed</em>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </tbody>
-    </table>
-
+<main>
+    <p><a href="index.php">← Manager dashboard</a></p>
+    <section class="card">
+        <h1>Maintenance requests</h1>
+        <?php if ($error): ?><p class="error"><?= e($error) ?></p><?php endif; ?>
+        <div style="overflow-x:auto"><table>
+            <thead><tr><th>Tenant / unit</th><th>Issue</th><th>Reported</th><th>Status</th></tr></thead>
+            <tbody>
+            <?php foreach ($requests as $request): ?>
+                <tr>
+                    <td><?= e($request['full_name']) ?><br><?= e($request['phone']) ?><br><?= e($request['property_name']) ?> · <?= e($request['unit_label']) ?></td>
+                    <td><?= e(ucfirst($request['category'])) ?><br><?= nl2br(e($request['description'])) ?></td>
+                    <td><?= e($request['created_at']) ?></td>
+                    <td>
+                        <form method="post">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="request_id" value="<?= (int) $request['request_id'] ?>">
+                            <select name="status">
+                                <?php foreach (['open', 'assigned', 'in_progress', 'closed'] as $status): ?>
+                                    <option value="<?= $status ?>" <?= $request['status'] === $status ? 'selected' : '' ?>><?= e(ucwords(str_replace('_', ' ', $status))) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="submit">Update</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if (!$requests): ?><tr><td colspan="4">There are no maintenance requests.</td></tr><?php endif; ?>
+            </tbody>
+        </table></div>
+    </section>
+</main>
 </body>
 </html>
