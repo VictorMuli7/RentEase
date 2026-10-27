@@ -207,3 +207,20 @@ INSERT INTO roles (role_name, description) VALUES
  ('admin','Manages users, settings, disputes, audit logs');
 INSERT INTO system_settings (setting_key, setting_value) VALUES
  ('late_fee_percent','5'), ('grace_period_days','5'), ('major_expense_threshold','20000');
+
+
+
+CREATE TABLE IF NOT EXISTS simulated_payments (
+    simulated_payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    lease_id INT NOT NULL,
+    tenant_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    method ENUM('mpesa', 'card') NOT NULL,
+    period_month DATE NOT NULL,
+    reference_no VARCHAR(40) NOT NULL UNIQUE,
+    status ENUM('pending', 'completed', 'failed')
+        NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_simulated_lease (lease_id),
+    INDEX idx_simulated_tenant (tenant_id)
+);
