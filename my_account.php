@@ -49,7 +49,13 @@ $payments = $stmt->fetchAll();
 </head>
 <body>
 <main>
-    <p><a href="browse_properties.php">← Browse homes</a> · <a href="submit_maintenance.php">Report maintenance</a> · <a href="change_password.php">Change password</a> · <a href="logout.php">Sign out</a></p>
+    <p>
+    <a href="browse_properties.php">← Browse homes</a> ·
+    <a href="tenant_pay.php">Pay Rent (Simulation)</a> ·
+    <a href="submit_maintenance.php">Report maintenance</a> ·
+    <a href="change_password.php">Change password</a> ·
+    <a href="logout.php">Sign out</a>
+</p>
     <h1>My RentEase account</h1>
     <section class="card">
         <h2>Applications</h2>
