@@ -15,6 +15,7 @@ $rate = $expected > 0 ? min(100, (int) round($collected / $expected * 100)) : 0;
 $by_property = collected_by_property($pdo, $uid, $start);
 $by_method = collected_by_method($pdo, $uid, $start);
 $payments = payments_in_month($pdo, $uid, $start);
+$simulated = simulated_in_month($pdo, $uid, $start);
 $unpaid = unpaid_leases($pdo, $uid, $start, $end);
 $overdue = is_overdue($start, grace_days($pdo));
 
@@ -92,4 +93,22 @@ page_start('Rent collected', 'rent');
         </tbody>
     </table></div>
 </section>
+<?php if ($simulated): ?>
+<section class="card">
+    <h2>Demo payments <?= tag('Simulated', 'warn') ?></h2>
+    <p class="sub">Made on the tenant's demo Pay Rent page. No real money moved, so these are not counted in the totals above.</p>
+    <div class="wrap"><table>
+        <thead><tr><th>Date</th><th>Tenant</th><th>Unit</th><th>Method</th><th>Reference</th><th>Result</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+        <?php foreach ($simulated as $r): ?>
+            <tr><td><?= h(substr((string) $r['created_at'], 0, 10)) ?></td><td><?= h($r['full_name']) ?></td>
+                <td><?= h($r['property_name']) ?> · <?= h($r['unit_label']) ?></td><td><?= h(strtoupper($r['method'])) ?></td>
+                <td><?= h($r['reference_no']) ?></td>
+                <td><?= $r['status'] === 'completed' ? tag('Completed', 'good') : ($r['status'] === 'failed' ? tag('Declined', 'bad') : tag('Pending', 'warn')) ?></td>
+                <td class="num"><?= h(kes($r['amount'])) ?></td></tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table></div>
+</section>
+<?php endif; ?>
 <?php page_end(); ?>
