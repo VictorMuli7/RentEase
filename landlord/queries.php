@@ -165,6 +165,29 @@ function payments_in_month(PDO $pdo, int $uid, string $start, int $limit = 200):
     return $stmt->fetchAll();
 }
 
+// Demo payments made on the tenant's "Pay Rent" page. They are kept apart from real
+// payments on purpose, so they are shown in their own list and never added to the totals.
+// Returns an empty list if the simulated_payments table has not been created yet.
+function simulated_in_month(PDO $pdo, int $uid, string $start, int $limit = 100): array
+{
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT sp.reference_no, sp.amount, sp.method, sp.status, sp.created_at,
+                    u.full_name, p.name AS property_name, un.unit_label
+             FROM simulated_payments sp JOIN leases l ON l.lease_id = sp.lease_id
+             JOIN users u ON u.user_id = sp.tenant_id
+             JOIN units un ON un.unit_id = l.unit_id
+             JOIN properties p ON p.property_id = un.property_id
+             WHERE p.owner_id = ? AND sp.period_month = ?
+             ORDER BY sp.created_at DESC LIMIT " . (int) $limit
+        );
+        $stmt->execute([$uid, $start]);
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
 function recent_payments(PDO $pdo, int $uid, int $limit = 5): array
 {
     $stmt = $pdo->prepare(
