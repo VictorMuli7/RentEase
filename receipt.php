@@ -1,4 +1,4 @@
-```php
+php
 <?php
 // Include helper functions for security, HTML escaping,
 // CSRF protection, and user role verification.
@@ -186,4 +186,3 @@ if (!$payment) {
 </div>
 </body>
 </html>
-```
